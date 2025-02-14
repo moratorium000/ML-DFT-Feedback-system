@@ -4,11 +4,11 @@ from sqlalchemy import and_, or_, not_, desc
 from uuid import UUID
 from datetime import datetime
 
-from .models import (
+from models import (
     Structure, Calculation, Mutation,
     OptimizationPath, PathStep, MLModel
 )
-from .schemas import (
+from schemas import (
     StructureCreate, CalculationCreate, MutationCreate,
     OptimizationPathCreate, PathStepCreate, MLModelCreate
 )

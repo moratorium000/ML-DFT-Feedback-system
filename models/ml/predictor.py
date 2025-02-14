@@ -201,15 +201,106 @@ class MLPredictor(IModelPredictor):
 
     def _structure_to_graph(self, structure: Structure):
         """구조를 그래프로 변환"""
-        # 구현 필요
-        pass
+        import torch
+        from torch_geometric.data import Data
+
+        # 원자 특성 벡터 생성
+        num_atoms = len(structure.atomic_numbers)
+        node_features = []
+        for z in structure.atomic_numbers:
+            # 원자 특성: [원자 번호, 전기음성도, 원자 반지름, 이온화 에너지]
+            features = [
+                z,
+                ELECTRONEGATIVITY.get(z, 0.0),
+                ATOMIC_RADIUS.get(z, 0.0),
+                IONIZATION_ENERGY.get(z, 0.0)
+            ]
+            node_features.append(features)
+
+        # 엣지 생성 (거리 기반 연결)
+        edge_index = []
+        edge_attr = []
+        positions = structure.positions
+        lattice = structure.lattice_vectors
+
+        for i in range(num_atoms):
+            for j in range(num_atoms):
+                if i != j:
+                    # 최소 이미지 규약 적용
+                    diff = positions[j] - positions[i]
+                    diff = diff - np.round(diff)
+                    cart_diff = np.dot(diff, lattice)
+                    distance = np.linalg.norm(cart_diff)
+
+                    if distance <= MAX_BOND_LENGTH:
+                        edge_index.append([i, j])
+                        edge_attr.append([distance])
+
+        # PyTorch Geometric Data 객체 생성
+        return Data(
+            x=torch.tensor(node_features, dtype=torch.float),
+            edge_index=torch.tensor(edge_index, dtype=torch.long).t().contiguous(),
+            edge_attr=torch.tensor(edge_attr, dtype=torch.float),
+            pos=torch.tensor(positions, dtype=torch.float),
+            cell=torch.tensor(lattice, dtype=torch.float)
+        )
 
     def _decode_structure(self, encoded: torch.Tensor) -> Structure:
         """인코딩된 표현을 구조로 변환"""
-        # 구현 필요
-        pass
+        # 텐서를 numpy 배열로 변환
+        decoded = encoded.detach().cpu().numpy()
+
+        # 구조 파라미터 추출
+        batch_size, feature_dim = decoded.shape
+        n_atoms = batch_size // 4  # 각 원자당 4개의 특성
+
+        # 원자 특성 복원
+        atomic_features = decoded.reshape(n_atoms, 4)
+
+        # 원자 번호 예측 (가장 가까운 실제 원자 번호로 매핑)
+        atomic_numbers = []
+        for features in atomic_features:
+            z_pred = features[0]  # 첫 번째 특성이 원자 번호
+            # 가장 가까운 실제 원자 번호 찾기
+            z = min(ATOMIC_NUMBERS, key=lambda x: abs(x - z_pred))
+            atomic_numbers.append(z)
+
+        # 위치 좌표 생성
+        positions = decoded[:, 1:4]  # 나머지 3개 특성을 위치 좌표로 사용
+
+        # 격자 벡터는 별도로 처리 필요 (여기서는 원본 유지 가정)
+        lattice_vectors = np.eye(3) * 10.0  # 기본값으로 10Å 큐빅 셀
+
+        return Structure(
+            atomic_numbers=np.array(atomic_numbers),
+            positions=positions,
+            lattice_vectors=lattice_vectors,
+            formula=self._get_formula(atomic_numbers)
+        )
 
     def _calculate_confidence(self, uncertainties: Dict[str, np.ndarray]) -> float:
         """신뢰도 점수 계산"""
-        # 구현 필요
-        pass
+        # 각 물성의 상대 불확실성 계산
+        relative_uncertainties = []
+
+        for prop_name, uncertainty in uncertainties.items():
+            if prop_name in self.property_ranges:
+                # 물성의 예상 범위로 정규화
+                prop_range = self.property_ranges[prop_name]
+                range_size = prop_range[1] - prop_range[0]
+                relative_uncertainty = np.mean(uncertainty) / range_size
+                relative_uncertainties.append(relative_uncertainty)
+
+        if not relative_uncertainties:
+            return 0.0
+
+        # 전체 불확실성의 평균 계산
+        mean_uncertainty = np.mean(relative_uncertainties)
+
+        # 신뢰도 점수 계산 (0-1 범위로 변환)
+        confidence = 1.0 - min(mean_uncertainty, 1.0)
+
+        # 신뢰도 점수를 시그모이드 함수로 조정하여 극단값 방지
+        confidence = 1.0 / (1.0 + np.exp(-5 * (confidence - 0.5)))
+
+        return float(confidence)
