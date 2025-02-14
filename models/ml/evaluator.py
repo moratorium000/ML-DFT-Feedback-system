@@ -212,12 +212,131 @@ class ModelEvaluator:
                                         struct1: Structure,
                                         struct2: Structure) -> float:
         """구조 유사도 계산"""
-        # 구현 필요: RMSD나 다른 구조 유사도 메트릭 사용
-        pass
+        # RMSD 기본 계산
+        rmsd_score = self._calculate_rmsd(struct1, struct2)
+
+        # 그래프 기반 유사도
+        graph1 = self._structure_to_graph(struct1)
+        graph2 = self._structure_to_graph(struct2)
+
+        # 노드 특성 유사도 (Cosine Similarity)
+        node_sim = F.cosine_similarity(
+            graph1.x.mean(dim=0, keepdim=True),
+            graph2.x.mean(dim=0, keepdim=True)
+        ).item()
+
+        # 엣지 분포 유사도 (Wasserstein Distance)
+        edge_dist1 = graph1.edge_attr.view(-1).numpy()
+        edge_dist2 = graph2.edge_attr.view(-1).numpy()
+        edge_sim = 1.0 / (1.0 + wasserstein_distance(edge_dist1, edge_dist2))
+
+        # 위상 유사도 (Spectral Distance)
+        spec_sim = self._calculate_spectral_similarity(graph1, graph2)
+
+        # 종합 점수 계산 (가중 평균)
+        weights = {
+            'rmsd': 0.4,
+            'node': 0.2,
+            'edge': 0.2,
+            'spectral': 0.2
+        }
+
+        similarity = (
+                weights['rmsd'] * (1.0 / (1.0 + rmsd_score)) +
+                weights['node'] * node_sim +
+                weights['edge'] * edge_sim +
+                weights['spectral'] * spec_sim
+        )
+
+        return similarity
 
     def _calculate_step_continuity(self,
                                    struct1: Structure,
                                    struct2: Structure) -> float:
         """단계 연속성 계산"""
-        # 구현 필요: 구조 변화의 연속성 평가
-        pass
+        graph1 = self._structure_to_graph(struct1)
+        graph2 = self._structure_to_graph(struct2)
+
+        # 노드 특성 연속성
+        node_smoothness = self._calculate_feature_smoothness(
+            graph1.x,
+            graph2.x
+        )
+
+        # 엣지 연속성
+        edge_consistency = self._calculate_edge_consistency(
+            graph1.edge_index, graph1.edge_attr,
+            graph2.edge_index, graph2.edge_attr
+        )
+
+        # 위상 연속성
+        topo_persistence = self._calculate_topological_persistence(
+            graph1, graph2
+        )
+
+        # 구조 변화량
+        structural_change = self._calculate_structural_change(
+            struct1, struct2
+        )
+
+        # 종합 연속성 점수
+        weights = {
+            'node': 0.3,
+            'edge': 0.3,
+            'topo': 0.2,
+            'struct': 0.2
+        }
+
+        continuity = (
+                weights['node'] * node_smoothness +
+                weights['edge'] * edge_consistency +
+                weights['topo'] * topo_persistence +
+                weights['struct'] * (1.0 - structural_change)
+        )
+
+        return continuity
+
+    def _calculate_feature_smoothness(self,
+                                      features1: torch.Tensor,
+                                      features2: torch.Tensor) -> float:
+        """노드 특성 연속성 계산"""
+        # L2 norm of feature differences
+        diff = features2 - features1
+        smoothness = 1.0 - torch.norm(diff, p=2).item() / (features1.size(0) * features1.size(1))
+        return max(0.0, smoothness)
+
+    def _calculate_edge_consistency(self,
+                                    edge_index1: torch.Tensor,
+                                    edge_attr1: torch.Tensor,
+                                    edge_index2: torch.Tensor,
+                                    edge_attr2: torch.Tensor) -> float:
+        """엣지 연속성 계산"""
+        # 엣지 집합 비교
+        edges1 = set(map(tuple, edge_index1.t().tolist()))
+        edges2 = set(map(tuple, edge_index2.t().tolist()))
+
+        # Jaccard similarity for edge sets
+        intersection = len(edges1.intersection(edges2))
+        union = len(edges1.union(edges2))
+
+        if union == 0:
+            return 0.0
+
+        return intersection / union
+
+    def _calculate_topological_persistence(self,
+                                           graph1: Data,
+                                           graph2: Data) -> float:
+        """위상 연속성 계산"""
+        # 그래프 라플라시안 eigen value 비교
+        L1 = self._get_graph_laplacian(graph1)
+        L2 = self._get_graph_laplacian(graph2)
+
+        eig1 = torch.linalg.eigvalsh(L1)[:10]  # 처음 10개 eigenvalue만 사용
+        eig2 = torch.linalg.eigvalsh(L2)[:10]
+
+        # Spectral distance
+        diff = torch.norm(eig1 - eig2, p=2)
+        persistence = 1.0 / (1.0 + diff.item())
+
+        return persistence
