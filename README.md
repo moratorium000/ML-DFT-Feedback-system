@@ -282,9 +282,3 @@ storage:
 
 This project is distributed under the MIT License. See LICENSE file for complete terms and conditions.
 
-## Support and Documentation
-
-- Technical documentation available in `docs/` directory
-- Issue tracking for bug reports and feature requests
-- Community discussions for implementation questions
-- Example notebooks and tutorials for common use cases
