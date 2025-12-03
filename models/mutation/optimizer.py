@@ -1,12 +1,14 @@
 from typing import Dict, List, Optional, Tuple
 import numpy as np
 from dataclasses import dataclass
+import copy
 import torch
 import torch.nn as nn
 from scipy.optimize import minimize
 
 from core.interfaces import Structure, MutationResult, PathStep
 from utils.logger import get_logger
+from utils.constants import ELEMENT_SYMBOLS
 
 
 @dataclass
@@ -141,14 +143,17 @@ class MutationOptimizer:
                    parent2: MutationResult) -> MutationResult:
         """교차 연산"""
         # 구조 교차
-        crossover_point = np.random.randint(
-            len(parent1.mutated_structure.positions)
+        min_len = min(
+            len(parent1.mutated_structure.positions),
+            len(parent2.mutated_structure.positions)
         )
+        crossover_point = np.random.randint(max(1, min_len))
 
-        child_structure = parent1.mutated_structure.copy()
-        child_structure.positions[crossover_point:] = (
-            parent2.mutated_structure.positions[crossover_point:]
-        )
+        child_structure = self._copy_structure(parent1.mutated_structure)
+        if crossover_point < len(parent2.mutated_structure.positions):
+            child_structure.positions[crossover_point:] = (
+                parent2.mutated_structure.positions[crossover_point:min_len]
+            )
 
         # 새로운 MutationResult 생성
         return MutationResult(
@@ -167,7 +172,7 @@ class MutationOptimizer:
 
     def _mutate(self, parent: MutationResult) -> MutationResult:
         """변이 연산"""
-        mutated_structure = parent.mutated_structure.copy()
+        mutated_structure = self._copy_structure(parent.mutated_structure)
 
         # 무작위 원자 선택
         atom_idx = np.random.randint(len(mutated_structure.positions))
@@ -220,3 +225,126 @@ class MutationOptimizer:
         current_best = np.max(fitness_scores)
 
         return abs(current_best - prev_best) < self.params.convergence_threshold
+
+    def _copy_structure(self, structure: Structure) -> Structure:
+        """Structure 복사"""
+        return Structure(
+            atomic_numbers=np.array(structure.atomic_numbers).copy(),
+            positions=np.array(structure.positions).copy(),
+            lattice_vectors=np.array(structure.lattice_vectors).copy(),
+            cell_params=dict(structure.cell_params),
+            formula=structure.formula,
+            space_group=structure.space_group,
+            charge=structure.charge,
+            spin=structure.spin,
+            constraints=copy.deepcopy(structure.constraints) if structure.constraints else None
+        )
+
+    def _calculate_property_match(self,
+                                  mutation: MutationResult,
+                                  target_properties: Dict[str, float]) -> float:
+        """물성 일치도 계산"""
+        if not target_properties:
+            return 1.0
+
+        scores = []
+        for prop_name, target_value in target_properties.items():
+            # mutation에서 추정된 물성 값 가져오기
+            if prop_name == 'energy':
+                estimated = mutation.energy_estimate
+            elif prop_name == 'stability':
+                estimated = mutation.stability_score
+            else:
+                # 기타 물성은 기본값 사용
+                estimated = 0.5
+
+            # 상대 오차로 점수 계산
+            if abs(target_value) > 1e-10:
+                relative_error = abs(estimated - target_value) / abs(target_value)
+            else:
+                relative_error = abs(estimated - target_value)
+
+            score = max(0.0, 1.0 - relative_error)
+            scores.append(score)
+
+        return np.mean(scores) if scores else 0.0
+
+    def _describe_changes(self,
+                          original: Structure,
+                          mutated: Structure) -> Dict:
+        """구조 변화 설명"""
+        orig_pos = np.array(original.positions)
+        mut_pos = np.array(mutated.positions)
+
+        changes = {}
+
+        # 원자 수 변화
+        n_orig = len(original.atomic_numbers)
+        n_mut = len(mutated.atomic_numbers)
+        changes['n_atoms_change'] = n_mut - n_orig
+
+        # 부피 변화
+        orig_vol = abs(np.linalg.det(np.array(original.lattice_vectors)))
+        mut_vol = abs(np.linalg.det(np.array(mutated.lattice_vectors)))
+        changes['volume_change'] = (mut_vol - orig_vol) / orig_vol if orig_vol > 0 else 0.0
+
+        # 위치 변화 (같은 크기인 경우만)
+        if orig_pos.shape == mut_pos.shape:
+            changes['position_changes'] = float(np.mean(np.linalg.norm(mut_pos - orig_pos, axis=1)))
+            changes['max_displacement'] = float(np.max(np.linalg.norm(mut_pos - orig_pos, axis=1)))
+        else:
+            changes['position_changes'] = 'N/A'
+            changes['max_displacement'] = 'N/A'
+
+        # 조성 변화
+        from collections import Counter
+        orig_comp = Counter(int(z) for z in original.atomic_numbers)
+        mut_comp = Counter(int(z) for z in mutated.atomic_numbers)
+        changes['composition_change'] = dict(mut_comp - orig_comp)
+
+        return changes
+
+    def _select_best_mutations(self,
+                               population: List[MutationResult],
+                               target_properties: Dict[str, float],
+                               n_best: int = 10) -> List[MutationResult]:
+        """최적 mutation 선택"""
+        if not population:
+            return []
+
+        # 적합도 계산
+        fitness_scores = self._evaluate_fitness(population, target_properties)
+
+        # 상위 n_best개 선택
+        best_indices = np.argsort(fitness_scores)[-n_best:][::-1]
+
+        return [population[i] for i in best_indices]
+
+    def _calculate_rmsd(self,
+                        structure1: Structure,
+                        structure2: Structure) -> float:
+        """RMSD 계산"""
+        pos1 = np.array(structure1.positions)
+        pos2 = np.array(structure2.positions)
+
+        # 원자 수가 다른 경우
+        if len(pos1) != len(pos2):
+            # 패딩하여 같은 크기로 만듦
+            max_len = max(len(pos1), len(pos2))
+            if len(pos1) < max_len:
+                pos1 = np.vstack([pos1, np.zeros((max_len - len(pos1), 3))])
+            if len(pos2) < max_len:
+                pos2 = np.vstack([pos2, np.zeros((max_len - len(pos2), 3))])
+
+        # 격자 좌표를 직교 좌표로 변환
+        lattice1 = np.array(structure1.lattice_vectors)
+        lattice2 = np.array(structure2.lattice_vectors)
+
+        cart_pos1 = np.dot(pos1, lattice1)
+        cart_pos2 = np.dot(pos2, lattice2)
+
+        # RMSD 계산
+        diff = cart_pos1 - cart_pos2
+        rmsd = np.sqrt(np.mean(np.sum(diff ** 2, axis=1)))
+
+        return float(rmsd)
