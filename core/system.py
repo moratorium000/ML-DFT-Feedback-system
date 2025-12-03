@@ -187,9 +187,55 @@ class MLDFTSystem:
             self.logger.error(f"Database update failed: {e}")
             raise
 
+    def _extract_property(self, dft_results: List[DFTResult], prop: str) -> float:
+        """DFT 결과에서 물성값 추출"""
+        if not dft_results:
+            return 0.0
+
+        last_result = dft_results[-1]
+        prop_map = {
+            "band_gap": last_result.band_gap,
+            "total_energy": last_result.total_energy,
+            "formation_energy": last_result.formation_energy,
+            "energy_per_atom": last_result.energy_per_atom
+        }
+
+        if prop in prop_map:
+            return prop_map[prop] or 0.0
+
+        # additional_properties에서 찾기
+        return last_result.additional_properties.get(prop, 0.0)
+
+    def _calculate_match_score(self, actual: float, target: float, error_range: float) -> float:
+        """물성 일치 점수 계산"""
+        if error_range == 0:
+            return 1.0 if actual == target else 0.0
+        error = abs(actual - target)
+        return max(0.0, 1.0 - error / error_range)
+
+    def _calculate_changes(self, recent_results: List[Dict]) -> List[float]:
+        """최근 결과들의 변화량 계산"""
+        if len(recent_results) < 2:
+            return [float('inf')]
+
+        changes = []
+        for i in range(1, len(recent_results)):
+            prev_matches = recent_results[i-1]["property_matches"]
+            curr_matches = recent_results[i]["property_matches"]
+
+            for prop in curr_matches:
+                if prop in prev_matches:
+                    change = abs(curr_matches[prop] - prev_matches[prop])
+                    changes.append(change)
+
+        return changes if changes else [0.0]
+
     def _prepare_optimization_result(self,
                                      history: List[Dict]) -> OptimizationResult:
         """최적화 결과 준비"""
+        if not history:
+            raise ValueError("No optimization history available")
+
         best_result = max(history,
                           key=lambda x: sum(x["property_matches"].values()))
 
@@ -197,5 +243,9 @@ class MLDFTSystem:
             final_structure=best_result["dft_results"][-1].final_structure,
             property_matches=best_result["property_matches"],
             optimization_path=history,
-            convergence_achieved=self._convergence_reached(history)
+            convergence_achieved=self._convergence_reached(history),
+            total_iterations=len(history),
+            computation_time=0.0,  # TODO: 실제 시간 계산
+            final_score=sum(best_result["property_matches"].values()) / len(best_result["property_matches"]),
+            history=history
         )

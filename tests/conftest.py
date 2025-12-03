@@ -44,8 +44,9 @@ def sample_structure(sample_lattice, sample_positions, sample_atomic_numbers):
     return Structure(
         lattice_vectors=sample_lattice,
         positions=sample_positions,
-        atomic_numbers=sample_atomic_numbers,
-        species=["Si", "Si", "Si", "Si"]
+        atomic_numbers=np.array(sample_atomic_numbers),
+        cell_params={"a": 5.0, "b": 5.0, "c": 5.0, "alpha": 90.0, "beta": 90.0, "gamma": 90.0},
+        formula="Si4"
     )
 
 
@@ -78,17 +79,23 @@ def sample_yaml_file(temp_dir):
 
 
 @pytest.fixture
-def sample_dft_result():
+def sample_dft_result(sample_structure):
     """Sample DFT calculation result."""
-    from core.interfaces import DFTResult, CalculationStatus
+    from core.interfaces import DFTResult
     return DFTResult(
-        structure_id="test_001",
+        initial_structure=sample_structure,
+        final_structure=sample_structure,
         total_energy=-100.5,
+        energy_per_atom=-25.125,
+        formation_energy=-0.5,
         forces=np.random.randn(4, 3) * 0.1,
-        stress=np.random.randn(3, 3) * 0.01,
+        stress_tensor=np.random.randn(3, 3) * 0.01,
         band_gap=1.5,
-        fermi_energy=-3.2,
-        status=CalculationStatus.COMPLETED
+        dos=None,
+        band_structure=None,
+        convergence=True,
+        calculation_time=120.5,
+        error_messages=[]
     )
 
 

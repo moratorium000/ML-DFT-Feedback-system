@@ -9,8 +9,7 @@ from core.interfaces import (
     PredictionResult,
     DFTResult,
     ValidationResult,
-    CalculationStatus,
-    OptimizationStatus
+    CalculationStatus
 )
 
 
@@ -22,32 +21,35 @@ class TestStructure:
         structure = Structure(
             lattice_vectors=sample_lattice,
             positions=sample_positions,
-            atomic_numbers=sample_atomic_numbers,
-            species=["Si"] * 4
+            atomic_numbers=np.array(sample_atomic_numbers),
+            cell_params={"a": 5.0, "b": 5.0, "c": 5.0},
+            formula="Si4"
         )
 
         assert structure.lattice_vectors.shape == (3, 3)
         assert structure.positions.shape == (4, 3)
         assert len(structure.atomic_numbers) == 4
-        assert len(structure.species) == 4
+        assert structure.formula == "Si4"
 
-    def test_structure_with_id(self, sample_structure):
-        """Test structure with custom ID."""
+    def test_structure_with_space_group(self, sample_structure):
+        """Test structure with space group."""
         structure = Structure(
             lattice_vectors=sample_structure.lattice_vectors,
             positions=sample_structure.positions,
             atomic_numbers=sample_structure.atomic_numbers,
-            species=sample_structure.species,
-            structure_id="custom_id_001"
+            cell_params=sample_structure.cell_params,
+            formula=sample_structure.formula,
+            space_group="Fm-3m"
         )
-        assert structure.structure_id == "custom_id_001"
+        assert structure.space_group == "Fm-3m"
 
     def test_structure_properties(self, sample_structure):
         """Test structure has expected properties."""
         assert hasattr(sample_structure, 'lattice_vectors')
         assert hasattr(sample_structure, 'positions')
         assert hasattr(sample_structure, 'atomic_numbers')
-        assert hasattr(sample_structure, 'species')
+        assert hasattr(sample_structure, 'formula')
+        assert hasattr(sample_structure, 'cell_params')
 
 
 class TestMutationResult:
@@ -59,66 +61,104 @@ class TestMutationResult:
             original_structure=sample_structure,
             mutated_structure=sample_structure,
             mutation_type="substitution",
-            mutation_params={"element": "Ge", "site": 0}
+            changes={"element": "Ge", "site": 0},
+            success=True,
+            stability_score=0.9,
+            validity_score=0.85,
+            energy_estimate=-100.0,
+            generation=1,
+            parent_id=None
         )
 
         assert result.mutation_type == "substitution"
-        assert result.mutation_params["element"] == "Ge"
+        assert result.changes["element"] == "Ge"
 
-    def test_mutation_result_with_score(self, sample_structure):
-        """Test mutation result with score."""
+    def test_mutation_result_with_scores(self, sample_structure):
+        """Test mutation result with scores."""
         result = MutationResult(
             original_structure=sample_structure,
             mutated_structure=sample_structure,
             mutation_type="distortion",
-            mutation_params={"magnitude": 0.1},
+            changes={"magnitude": 0.1},
             success=True,
-            score=0.85
+            stability_score=0.9,
+            validity_score=0.85,
+            energy_estimate=-100.0,
+            generation=1,
+            parent_id="parent_001"
         )
 
         assert result.success is True
-        assert result.score == 0.85
+        assert result.stability_score == 0.9
+        assert result.validity_score == 0.85
 
 
 class TestDFTResult:
     """Test DFTResult dataclass."""
 
-    def test_dft_result_creation(self):
+    def test_dft_result_creation(self, sample_structure):
         """Test DFT result creation."""
         result = DFTResult(
-            structure_id="test_001",
+            initial_structure=sample_structure,
+            final_structure=sample_structure,
             total_energy=-100.5,
-            status=CalculationStatus.COMPLETED
+            energy_per_atom=-25.125,
+            formation_energy=-0.5,
+            forces=np.zeros((4, 3)),
+            stress_tensor=np.zeros((3, 3)),
+            band_gap=1.5,
+            dos=None,
+            band_structure=None,
+            convergence=True,
+            calculation_time=100.0,
+            error_messages=[]
         )
 
         assert result.total_energy == -100.5
-        assert result.status == CalculationStatus.COMPLETED
+        assert result.convergence is True
 
-    def test_dft_result_with_forces(self):
+    def test_dft_result_with_forces(self, sample_structure):
         """Test DFT result with forces."""
         forces = np.random.randn(4, 3)
         result = DFTResult(
-            structure_id="test_002",
+            initial_structure=sample_structure,
+            final_structure=sample_structure,
             total_energy=-100.5,
+            energy_per_atom=-25.125,
+            formation_energy=-0.5,
             forces=forces,
-            status=CalculationStatus.COMPLETED
+            stress_tensor=np.zeros((3, 3)),
+            band_gap=None,
+            dos=None,
+            band_structure=None,
+            convergence=True,
+            calculation_time=100.0,
+            error_messages=[]
         )
 
         assert result.forces is not None
         assert result.forces.shape == (4, 3)
 
-    def test_dft_result_with_electronic_properties(self):
+    def test_dft_result_with_electronic_properties(self, sample_structure):
         """Test DFT result with electronic properties."""
         result = DFTResult(
-            structure_id="test_003",
+            initial_structure=sample_structure,
+            final_structure=sample_structure,
             total_energy=-100.5,
+            energy_per_atom=-25.125,
+            formation_energy=-0.5,
+            forces=np.zeros((4, 3)),
+            stress_tensor=np.zeros((3, 3)),
             band_gap=1.5,
-            fermi_energy=-3.2,
-            status=CalculationStatus.COMPLETED
+            dos={"total": [1, 2, 3]},
+            band_structure={"bands": [[1, 2], [3, 4]]},
+            convergence=True,
+            calculation_time=100.0,
+            error_messages=[]
         )
 
         assert result.band_gap == 1.5
-        assert result.fermi_energy == -3.2
+        assert result.dos is not None
 
 
 class TestValidationResult:
@@ -128,24 +168,26 @@ class TestValidationResult:
         """Test validation result creation."""
         result = ValidationResult(
             is_valid=True,
-            errors=[],
-            warnings=["Minor overlap detected"]
+            stability_score=0.95,
+            validation_details={"geometry": "ok", "chemistry": "ok"},
+            error_messages=[]
         )
 
         assert result.is_valid is True
-        assert len(result.errors) == 0
-        assert len(result.warnings) == 1
+        assert result.stability_score == 0.95
+        assert len(result.error_messages) == 0
 
     def test_validation_result_with_errors(self):
         """Test validation result with errors."""
         result = ValidationResult(
             is_valid=False,
-            errors=["Atomic distance too small", "Invalid cell angle"],
-            warnings=[]
+            stability_score=0.3,
+            validation_details={"geometry": "failed"},
+            error_messages=["Atomic distance too small", "Invalid cell angle"]
         )
 
         assert result.is_valid is False
-        assert len(result.errors) == 2
+        assert len(result.error_messages) == 2
 
 
 class TestCalculationStatus:
@@ -158,13 +200,7 @@ class TestCalculationStatus:
         assert CalculationStatus.COMPLETED is not None
         assert CalculationStatus.FAILED is not None
 
-
-class TestOptimizationStatus:
-    """Test OptimizationStatus enum."""
-
-    def test_status_values(self):
-        """Test optimization status enum values."""
-        assert OptimizationStatus.INITIALIZING is not None
-        assert OptimizationStatus.RUNNING is not None
-        assert OptimizationStatus.CONVERGED is not None
-        assert OptimizationStatus.FAILED is not None
+    def test_status_string_values(self):
+        """Test calculation status string values."""
+        assert CalculationStatus.PENDING.value == "pending"
+        assert CalculationStatus.COMPLETED.value == "completed"

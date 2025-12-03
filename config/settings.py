@@ -64,6 +64,39 @@ class LogSettings:
 
 
 @dataclass
+class PrototypeSettings:
+    """Prototype 설정"""
+    cache_dir: Path = Path(".cache/prototypes")
+    validation_settings: Dict = field(default_factory=lambda: {
+        'min_atomic_distance': 0.7,
+        'max_atomic_distance': 3.0,
+        'min_cell_angle': 30.0,
+        'max_cell_angle': 150.0,
+        'max_volume_change': 0.3
+    })
+    data_format: str = "json"
+    backup_enabled: bool = True
+    max_cache_size: int = 1000
+
+
+@dataclass
+class PathSettings:
+    """경로 최적화 설정"""
+    optimization_parameters: Dict = field(default_factory=lambda: {
+        'max_iterations': 100,
+        'convergence_threshold': 0.01,
+        'step_size': 0.1,
+        'momentum': 0.9
+    })
+    mutation_settings: Dict = field(default_factory=lambda: {
+        'mutation_rate': 0.3,
+        'crossover_rate': 0.7,
+        'population_size': 50
+    })
+    dft_validation_interval: int = 5
+
+
+@dataclass
 class SystemSettings:
     """시스템 전체 설정"""
     dft: DFTSettings = field(default_factory=DFTSettings)
@@ -72,6 +105,14 @@ class SystemSettings:
     storage: StorageSettings = field(default_factory=StorageSettings)
     cache: CacheSettings = field(default_factory=CacheSettings)
     logging: LogSettings = field(default_factory=LogSettings)
+    prototype: PrototypeSettings = field(default_factory=PrototypeSettings)
+    path: PathSettings = field(default_factory=PathSettings)
+
+    # 최적화 관련 설정
+    max_iterations: int = 100
+    convergence_window: int = 5
+    convergence_threshold: float = 0.95
+    min_change_threshold: float = 0.001
 
     @classmethod
     def from_file(cls, config_path: Union[str, Path]) -> 'SystemSettings':
@@ -101,7 +142,13 @@ class SystemSettings:
             'database': self.database.__dict__,
             'storage': self.storage.__dict__,
             'cache': self.cache.__dict__,
-            'logging': self.logging.__dict__
+            'logging': self.logging.__dict__,
+            'prototype': self.prototype.__dict__,
+            'path': self.path.__dict__,
+            'max_iterations': self.max_iterations,
+            'convergence_window': self.convergence_window,
+            'convergence_threshold': self.convergence_threshold,
+            'min_change_threshold': self.min_change_threshold
         }
 
         if config_path.suffix == '.yaml':

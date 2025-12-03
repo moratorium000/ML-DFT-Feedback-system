@@ -127,7 +127,59 @@ class PrototypeManager:
         self.config = config
         self.logger = logging.getLogger(__name__)
         self.cache_dir = Path(config.cache_dir)
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.structure_validator = self._init_validator()
+
+    def _init_validator(self) -> IStructureValidator:
+        """구조 검증기 초기화"""
+        from models.mutation.validator import MutationValidator
+        return MutationValidator(self.config.validation_settings)
+
+    def _generate_id(self, structure: Structure) -> str:
+        """구조 기반 고유 ID 생성"""
+        import hashlib
+        content = f"{structure.formula}_{structure.atomic_numbers.tobytes().hex()}"
+        hash_val = hashlib.md5(content.encode()).hexdigest()[:8]
+        return f"proto_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{hash_val}"
+
+    async def _save_prototype(self, prototype_id: str, structure: Structure, metadata: Dict):
+        """Prototype 저장"""
+        import json
+        save_path = self.cache_dir / f"{prototype_id}.{self.config.data_format}"
+        data = {
+            "metadata": metadata,
+            "structure": {
+                "formula": structure.formula,
+                "atomic_numbers": structure.atomic_numbers.tolist(),
+                "positions": structure.positions.tolist(),
+                "lattice_vectors": structure.lattice_vectors.tolist(),
+                "cell_params": structure.cell_params
+            }
+        }
+        with open(save_path, 'w') as f:
+            json.dump(data, f, indent=2)
+        self.logger.info(f"Prototype saved: {save_path}")
+
+    async def load_structure(self, path: Union[str, Path]) -> Structure:
+        """구조 파일 로드"""
+        import json
+        path = Path(path)
+        if path.suffix == '.json':
+            with open(path) as f:
+                data = json.load(f)
+            return Structure(**data.get('structure', data))
+        else:
+            from ase.io import read
+            import numpy as np
+            atoms = read(str(path))
+            return Structure(
+                atomic_numbers=np.array(atoms.get_atomic_numbers()),
+                positions=atoms.get_scaled_positions(),
+                lattice_vectors=np.array(atoms.get_cell()),
+                cell_params={"a": atoms.cell.lengths()[0], "b": atoms.cell.lengths()[1],
+                            "c": atoms.cell.lengths()[2]},
+                formula=atoms.get_chemical_formula()
+            )
 
     async def register_prototype(self,
                                  structure: Structure,
@@ -163,6 +215,68 @@ class DFTManager:
         self.logger = logging.getLogger(__name__)
         self.calculator = self._init_calculator()
         self.job_queue = asyncio.Queue()
+        self._active_jobs: Dict[str, Dict] = {}
+
+    def _init_calculator(self):
+        """DFT 계산기 초기화"""
+        from models.dft.calculator import DFTCalculator
+        return DFTCalculator(dft_code=self.config.code, config=self.config)
+
+    def _prepare_calculation(self, step: PathStep) -> Dict:
+        """계산 입력 준비"""
+        return {
+            "structure": step.final_structure,
+            "parameters": self.config.input_parameters,
+            "convergence": self.config.convergence_criteria,
+            "parallel": self.config.parallel_settings
+        }
+
+    async def _submit_job(self, calc_inputs: Dict) -> str:
+        """계산 작업 제출"""
+        import uuid
+        job_id = f"dft_{uuid.uuid4().hex[:8]}"
+        self._active_jobs[job_id] = {
+            "inputs": calc_inputs,
+            "status": "submitted",
+            "start_time": datetime.now()
+        }
+        await self.job_queue.put((job_id, calc_inputs))
+        self.logger.info(f"Job submitted: {job_id}")
+        return job_id
+
+    async def _monitor_calculation(self, job_id: str) -> Dict:
+        """계산 모니터링"""
+        job_info = self._active_jobs.get(job_id)
+        if not job_info:
+            raise ValueError(f"Job not found: {job_id}")
+
+        # 계산 실행 (실제로는 외부 DFT 코드 호출)
+        result = await self.calculator.calculate(
+            structure=job_info["inputs"]["structure"],
+            parameters=job_info["inputs"]["parameters"]
+        )
+        job_info["status"] = "completed"
+        job_info["result"] = result
+        return result
+
+    def _process_result(self, result: Dict) -> DFTResult:
+        """결과 처리 및 DFTResult 변환"""
+        import numpy as np
+        return DFTResult(
+            initial_structure=result.get("initial_structure"),
+            final_structure=result.get("final_structure"),
+            total_energy=result.get("total_energy", 0.0),
+            energy_per_atom=result.get("energy_per_atom", 0.0),
+            formation_energy=result.get("formation_energy", 0.0),
+            forces=np.array(result.get("forces", [])),
+            stress_tensor=np.array(result.get("stress", np.zeros((3, 3)))),
+            band_gap=result.get("band_gap"),
+            dos=result.get("dos"),
+            band_structure=result.get("band_structure"),
+            convergence=result.get("converged", False),
+            calculation_time=result.get("calculation_time", 0.0),
+            error_messages=result.get("errors", [])
+        )
 
     async def validate_path(self, path: List[PathStep]) -> List[DFTResult]:
         """경로 검증을 위한 DFT 계산"""
@@ -193,6 +307,48 @@ class MLManager:
         self.logger = logging.getLogger(__name__)
         self.property_predictor = self._init_property_predictor()
         self.path_predictor = self._init_path_predictor()
+
+    def _init_property_predictor(self) -> IModelPredictor:
+        """물성 예측 모델 초기화"""
+        from models.ml.predictor import PropertyPredictor
+        return PropertyPredictor(
+            hidden_dim=self.config.model_parameters.get('hidden_layers', [64])[0],
+            n_layers=len(self.config.model_parameters.get('hidden_layers', [64])),
+            device=self.config.device
+        )
+
+    def _init_path_predictor(self) -> IModelPredictor:
+        """경로 예측 모델 초기화"""
+        from models.ml.predictor import PathPredictor
+        return PathPredictor(
+            hidden_dim=self.config.model_parameters.get('hidden_layers', [64])[0],
+            device=self.config.device
+        )
+
+    def _prepare_training_data(self, dft_results: List[DFTResult]) -> Dict:
+        """학습 데이터 준비"""
+        import numpy as np
+        structures = []
+        targets = []
+
+        for result in dft_results:
+            if result.final_structure is not None:
+                structures.append({
+                    "positions": result.final_structure.positions,
+                    "atomic_numbers": result.final_structure.atomic_numbers,
+                    "lattice": result.final_structure.lattice_vectors
+                })
+                targets.append({
+                    "total_energy": result.total_energy,
+                    "band_gap": result.band_gap,
+                    "formation_energy": result.formation_energy
+                })
+
+        return {
+            "structures": structures,
+            "targets": targets,
+            "batch_size": self.config.training_parameters.get('batch_size', 32)
+        }
 
     async def predict_paths(self,
                             structure: Structure,
@@ -231,6 +387,79 @@ class PathManager:
         self.mutation_generator = self._init_mutation_generator()
         self.path_optimizer = self._init_path_optimizer()
 
+    def _init_mutation_generator(self) -> IMutationGenerator:
+        """변이 생성기 초기화"""
+        from models.mutation.generator import MutationGenerator
+        return MutationGenerator(config=self.config.mutation_settings)
+
+    def _init_path_optimizer(self):
+        """경로 최적화기 초기화"""
+        from models.mutation.optimizer import PathOptimizer
+        return PathOptimizer(config=self.config.optimization_parameters)
+
+    async def _evaluate_mutations(self,
+                                  mutations: List[MutationResult],
+                                  target_properties: Dict[str, float]) -> List[Dict]:
+        """변이 평가"""
+        evaluations = []
+        for mutation in mutations:
+            score = 0.0
+            if mutation.success:
+                score = mutation.stability_score * 0.5 + mutation.validity_score * 0.5
+            evaluations.append({
+                "mutation": mutation,
+                "score": score,
+                "valid": mutation.success
+            })
+        return evaluations
+
+    def _evaluate_property_match(self,
+                                 path: Union[PathStep, List[PathStep]],
+                                 target_properties: Dict[str, float]) -> float:
+        """물성 일치도 평가"""
+        if isinstance(path, list):
+            if not path:
+                return 0.0
+            path = path[-1]  # 마지막 단계 사용
+
+        if path.ml_predictions is None:
+            return 0.0
+
+        scores = []
+        for prop, target in target_properties.items():
+            predicted = path.ml_predictions.get(prop, 0)
+            if target != 0:
+                error = abs(predicted - target) / abs(target)
+                scores.append(max(0.0, 1.0 - error))
+            else:
+                scores.append(1.0 if predicted == 0 else 0.0)
+
+        return sum(scores) / len(scores) if scores else 0.0
+
+    def _evaluate_feasibility(self, path: Union[PathStep, List[PathStep]]) -> float:
+        """실현 가능성 평가"""
+        if isinstance(path, list):
+            if not path:
+                return 0.0
+            # 모든 단계의 평균 신뢰도
+            confidences = [step.confidence for step in path]
+            return sum(confidences) / len(confidences)
+        return path.confidence
+
+    def _evaluate_efficiency(self, path: Union[PathStep, List[PathStep]]) -> float:
+        """효율성 평가 (에너지 장벽 기반)"""
+        if isinstance(path, list):
+            if not path:
+                return 0.0
+            barriers = [step.energy_barrier for step in path if step.energy_barrier]
+            if not barriers:
+                return 0.5
+            max_barrier = max(barriers)
+            return max(0.0, 1.0 - max_barrier / 1.0)  # 1 eV 기준
+        if path.energy_barrier is None:
+            return 0.5
+        return max(0.0, 1.0 - path.energy_barrier / 1.0)
+
     async def evaluate_and_select_path(self,
                                        paths: List[PathStep],
                                        target_properties: Dict[str, float]) -> List[PathStep]:
@@ -264,7 +493,7 @@ class PathManager:
         return optimized_path
 
     async def _evaluate_path(self,
-                             path: List[PathStep],
+                             path: Union[PathStep, List[PathStep]],
                              target_properties: Dict[str, float]) -> Dict:
         """경로 평가"""
         return {
@@ -290,4 +519,6 @@ class PathManager:
 
         # 최고 점수 경로 선택
         best_path, _ = max(path_scores, key=lambda x: x[1])
-        return best_path
+        if isinstance(best_path, list):
+            return best_path
+        return [best_path]
