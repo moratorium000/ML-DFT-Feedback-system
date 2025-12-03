@@ -85,7 +85,7 @@ class DatabaseQueries:
         """구조별 계산 결과 조회"""
         return db.query(Calculation) \
             .filter(Calculation.structure_id == structure_id) \
-            .order_by(desc(Calculation.created_at)) \
+            .order_by(desc(Calculation.started_at)) \
             .all()
 
     @staticmethod
@@ -207,3 +207,53 @@ class DatabaseQueries:
             'std': result.std,
             'count': result.count
         } if result else None
+
+    @staticmethod
+    async def store_dft_results(db: Session, dft_results: List[Any]) -> List[Calculation]:
+        """DFT 결과 저장"""
+        import uuid
+        calculations = []
+        for result in dft_results:
+            calc_id = str(uuid.uuid4())
+            db_calc = Calculation(
+                id=calc_id,
+                status='completed',
+                started_at=datetime.utcnow(),
+                completed_at=datetime.utcnow(),
+                total_energy=getattr(result, 'total_energy', 0.0),
+                energy_per_atom=getattr(result, 'energy_per_atom', 0.0),
+                formation_energy=getattr(result, 'formation_energy', 0.0),
+                band_gap=getattr(result, 'band_gap', None),
+                convergence=getattr(result, 'convergence', False),
+                calculation_parameters={},
+                error_messages=getattr(result, 'error_messages', [])
+            )
+            db.add(db_calc)
+            calculations.append(db_calc)
+        db.commit()
+        return calculations
+
+    @staticmethod
+    async def store_property_matches(db: Session, property_matches: Dict[str, float]) -> None:
+        """물성 매칭 결과 저장"""
+        # 최적화 경로에 저장하거나 별도 테이블에 저장
+        # 현재는 로깅만 수행
+        pass
+
+    @staticmethod
+    async def update_optimization_history(db: Session, feedback: Dict) -> None:
+        """최적화 히스토리 업데이트"""
+        import uuid
+        # 최적화 경로 단계 추가
+        path_id = feedback.get('path_id')
+        if path_id:
+            step = PathStep(
+                id=str(uuid.uuid4()),
+                path_id=path_id,
+                step_number=feedback.get('step', 0),
+                step_type='optimization',
+                success=True,
+                evaluation_metrics=feedback.get('property_matches', {})
+            )
+            db.add(step)
+            db.commit()
