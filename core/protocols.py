@@ -1,5 +1,5 @@
 from typing import Protocol, List, Dict, Optional
-from interfaces import (
+from .interfaces import (
     Structure,
     MutationResult,
     ValidationResult,

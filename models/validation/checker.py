@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from enum import Enum
 import logging
 
-from interfaces import Structure, DFTResult, ValidationResult
+from core.interfaces import Structure, DFTResult, ValidationResult
 from utils.logger import get_logger
 
 

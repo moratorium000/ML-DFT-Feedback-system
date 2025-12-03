@@ -4,8 +4,8 @@ from dataclasses import dataclass
 import random
 from enum import Enum
 
-from interfaces import Structure, MutationResult
-from protocols import IMutationGenerator
+from core.interfaces import Structure, MutationResult
+from core.protocols import IMutationGenerator
 from utils.logger import get_logger
 
 

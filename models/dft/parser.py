@@ -6,7 +6,7 @@ import json
 import re
 
 from core.interfaces import Structure, DFTResult
-from core.utils.logger import get_logger
+from utils.logger import get_logger
 
 
 class DFTOutputParser:

@@ -7,7 +7,7 @@ import logging
 
 from core.interfaces import Structure, DFTResult, CalculationStatus
 from core.protocols import IDFTCalculator
-from core.utils.logger import get_logger
+from utils.logger import get_logger
 
 
 class DFTCode(Enum):

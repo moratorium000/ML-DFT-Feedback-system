@@ -2,8 +2,8 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 from dataclasses import dataclass
 
-from interfaces import Structure, ValidationResult
-from protocols import IStructureValidator
+from core.interfaces import Structure, ValidationResult
+from core.protocols import IStructureValidator
 from utils.logger import get_logger
 
 
