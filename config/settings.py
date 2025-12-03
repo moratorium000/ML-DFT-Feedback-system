@@ -22,11 +22,18 @@ class DFTSettings:
 @dataclass
 class MLSettings:
     """ML 모델 설정"""
+    model_type: str = "graph"
     model_parameters: Dict = field(default_factory=lambda: ML_DEFAULT_PARAMETERS)
     training_parameters: Dict = field(default_factory=lambda: {
+        'optimizer': 'adam',
+        'learning_rate': 0.001,
         'batch_size': 32,
         'epochs': 100,
         'validation_split': 0.2
+    })
+    early_stopping: Dict = field(default_factory=lambda: {
+        'patience': 10,
+        'min_delta': 0.001
     })
     device: str = 'cuda'  # or 'cpu'
     checkpoint_dir: Path = Path("checkpoints")

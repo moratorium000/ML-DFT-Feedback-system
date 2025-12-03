@@ -19,6 +19,7 @@ from .protocols import (
     IModelPredictor
 )
 
+from config.settings import MLSettings
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 from pathlib import Path
@@ -67,29 +68,7 @@ class DFTConfig:
     max_time: int = 3600  # seconds
     checkpoint_interval: int = 300  # seconds
 
-@dataclass
-class MLConfig:
-    """ML 모델 설정"""
-    model_type: str = "graph"
-    model_parameters: Dict = field(default_factory=lambda: {
-        'hidden_layers': [256, 128, 64],
-        'activation': 'relu',
-        'dropout_rate': 0.1,
-        'batch_norm': True
-    })
-    training_parameters: Dict = field(default_factory=lambda: {
-        'optimizer': 'adam',
-        'learning_rate': 0.001,
-        'batch_size': 32,
-        'epochs': 100,
-        'validation_split': 0.2
-    })
-    early_stopping: Dict = field(default_factory=lambda: {
-        'patience': 10,
-        'min_delta': 0.001
-    })
-    checkpoint_dir: Path = Path("checkpoints")
-    device: str = "cuda"  # or "cpu"
+# MLConfig 제거됨 - config.settings.MLSettings로 통합
 
 @dataclass
 class PathConfig:
@@ -310,7 +289,7 @@ class DFTManager:
 class MLManager:
     """ML 모델 관리"""
 
-    def __init__(self, config: MLConfig):
+    def __init__(self, config: MLSettings):
         self.config = config
         self.logger = logging.getLogger(__name__)
         self.property_predictor = self._init_property_predictor()
