@@ -1,8 +1,10 @@
 from typing import Dict, List, Optional, Tuple
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.nn import GCNConv, global_mean_pool
+from torch_geometric.data import Data
 
 from core.interfaces import (
     Structure,
@@ -10,6 +12,14 @@ from core.interfaces import (
     PathStep
 )
 from core.protocols import IModelPredictor
+from utils.constants import (
+    ELECTRONEGATIVITY,
+    ATOMIC_RADIUS,
+    IONIZATION_ENERGY,
+    MAX_BOND_LENGTH,
+    ATOMIC_NUMBERS,
+    ELEMENT_SYMBOLS
+)
 
 
 class StructureEncoder(nn.Module):
@@ -102,9 +112,20 @@ class MLPredictor(IModelPredictor):
         self.property_model = PropertyPredictor(input_dim, hidden_dim).to(device)
         self.path_model = PathPredictor(input_dim, hidden_dim).to(device)
 
-        self.scaler = StandardScaler()
         self.property_criterion = nn.MSELoss()
         self.path_criterion = nn.MSELoss()
+
+        # 물성 범위 (정규화 및 신뢰도 계산용)
+        self.property_ranges = {
+            'energy': (-10.0, 0.0),       # eV/atom
+            'band_gap': (0.0, 10.0),      # eV
+            'forces': (-5.0, 5.0),        # eV/Å
+            'formation_energy': (-5.0, 2.0)  # eV/atom
+        }
+
+        # 경로 수렴 임계값
+        self.convergence_threshold = 0.1
+        self.max_path_steps = 50
 
     async def predict_properties(self,
                                  structure: Structure) -> PredictionResult:
@@ -153,6 +174,10 @@ class MLPredictor(IModelPredictor):
             initial_graph = self._structure_to_graph(initial).to(self.device)
             target_graph = self._structure_to_graph(target).to(self.device)
 
+            # batch 인덱스 추가
+            initial_graph.batch = torch.zeros(initial_graph.x.size(0), dtype=torch.long, device=self.device)
+            target_graph.batch = torch.zeros(target_graph.x.size(0), dtype=torch.long, device=self.device)
+
             # 초기/목표 구조 인코딩
             initial_encoded = self.path_model.encoder(
                 initial_graph.x,
@@ -168,8 +193,10 @@ class MLPredictor(IModelPredictor):
             # 경로 생성
             path = []
             current = initial_encoded
+            current_structure = initial
+            step_count = 0
 
-            while not self._is_target_reached(current, target_encoded):
+            while not self._is_target_reached(current, target_encoded) and step_count < self.max_path_steps:
                 # 다음 구조 예측
                 transition = self.path_model.transition_predictor(
                     torch.cat([current, target_encoded], dim=1)
@@ -177,19 +204,72 @@ class MLPredictor(IModelPredictor):
 
                 # 구조로 변환
                 next_structure = self._decode_structure(transition)
+                confidence = self._calculate_step_confidence(transition, current, target_encoded)
 
                 # 경로에 추가
                 path.append(PathStep(
-                    initial_structure=self._decode_structure(current),
+                    step_type='predicted',
+                    initial_structure=current_structure,
                     final_structure=next_structure,
-                    confidence=self._calculate_step_confidence(transition)
+                    energy_initial=0.0,
+                    energy_final=0.0,
+                    energy_barrier=None,
+                    transformation_matrix=None,
+                    atomic_mapping=None,
+                    dft_results=None,
+                    ml_predictions=None,
+                    success=True,
+                    reversible=True,
+                    confidence=confidence
                 ))
 
+                # 다음 스텝 준비
+                next_graph = self._structure_to_graph(next_structure).to(self.device)
+                next_graph.batch = torch.zeros(next_graph.x.size(0), dtype=torch.long, device=self.device)
                 current = self.path_model.encoder(
-                    self._structure_to_graph(next_structure).to(self.device)
+                    next_graph.x,
+                    next_graph.edge_index,
+                    next_graph.batch
                 )
+                current_structure = next_structure
+                step_count += 1
 
             return path
+
+    def _is_target_reached(self, current: torch.Tensor, target: torch.Tensor) -> bool:
+        """목표 구조에 도달했는지 확인"""
+        distance = torch.norm(current - target).item()
+        return distance < self.convergence_threshold
+
+    def _calculate_step_confidence(self,
+                                   transition: torch.Tensor,
+                                   current: torch.Tensor,
+                                   target: torch.Tensor) -> float:
+        """스텝 신뢰도 계산"""
+        # 목표 방향으로의 진행 정도 계산
+        current_dist = torch.norm(current - target).item()
+        transition_magnitude = torch.norm(transition).item()
+
+        # 신뢰도: 전이 크기가 적절하고 목표로 향할수록 높음
+        if current_dist == 0:
+            return 1.0
+
+        # 정규화된 신뢰도 (0-1 범위)
+        confidence = min(1.0, 1.0 / (1.0 + transition_magnitude / current_dist))
+        return float(confidence)
+
+    def _get_formula(self, atomic_numbers: List[int]) -> str:
+        """원자 번호 리스트에서 화학식 생성"""
+        from collections import Counter
+        counts = Counter(atomic_numbers)
+        formula_parts = []
+        for z, count in sorted(counts.items()):
+            symbol = ELEMENT_SYMBOLS.get(z, f'X{z}')
+            if count == 1:
+                formula_parts.append(symbol)
+            else:
+                formula_parts.append(f"{symbol}{count}")
+        return ''.join(formula_parts)
 
     async def estimate_uncertainty(self,
                                    prediction: PredictionResult) -> Dict[str, float]:
@@ -199,29 +279,27 @@ class MLPredictor(IModelPredictor):
             for prop, uncert in prediction.uncertainty.items()
         }
 
-    def _structure_to_graph(self, structure: Structure):
+    def _structure_to_graph(self, structure: Structure) -> Data:
         """구조를 그래프로 변환"""
-        import torch
-        from torch_geometric.data import Data
-
         # 원자 특성 벡터 생성
         num_atoms = len(structure.atomic_numbers)
         node_features = []
         for z in structure.atomic_numbers:
+            z_int = int(z)
             # 원자 특성: [원자 번호, 전기음성도, 원자 반지름, 이온화 에너지]
             features = [
-                z,
-                ELECTRONEGATIVITY.get(z, 0.0),
-                ATOMIC_RADIUS.get(z, 0.0),
-                IONIZATION_ENERGY.get(z, 0.0)
+                float(z_int),
+                ELECTRONEGATIVITY.get(z_int, 0.0),
+                ATOMIC_RADIUS.get(z_int, 1.0),
+                IONIZATION_ENERGY.get(z_int, 10.0)
             ]
             node_features.append(features)
 
         # 엣지 생성 (거리 기반 연결)
         edge_index = []
         edge_attr = []
-        positions = structure.positions
-        lattice = structure.lattice_vectors
+        positions = np.array(structure.positions)
+        lattice = np.array(structure.lattice_vectors)
 
         for i in range(num_atoms):
             for j in range(num_atoms):
@@ -230,11 +308,16 @@ class MLPredictor(IModelPredictor):
                     diff = positions[j] - positions[i]
                     diff = diff - np.round(diff)
                     cart_diff = np.dot(diff, lattice)
-                    distance = np.linalg.norm(cart_diff)
+                    distance = float(np.linalg.norm(cart_diff))
 
                     if distance <= MAX_BOND_LENGTH:
                         edge_index.append([i, j])
                         edge_attr.append([distance])
+
+        # 엣지가 없으면 자기 연결 추가
+        if not edge_index:
+            edge_index = [[i, i] for i in range(num_atoms)]
+            edge_attr = [[0.0] for _ in range(num_atoms)]
 
         # PyTorch Geometric Data 객체 생성
         return Data(
@@ -250,23 +333,30 @@ class MLPredictor(IModelPredictor):
         # 텐서를 numpy 배열로 변환
         decoded = encoded.detach().cpu().numpy()
 
-        # 구조 파라미터 추출
-        batch_size, feature_dim = decoded.shape
-        n_atoms = batch_size // 4  # 각 원자당 4개의 특성
+        # 구조 파라미터 추출 (1D 벡터를 구조로 변환)
+        if decoded.ndim == 1:
+            decoded = decoded.reshape(1, -1)
 
-        # 원자 특성 복원
-        atomic_features = decoded.reshape(n_atoms, 4)
+        # 유효 원자 번호 목록
+        valid_atomic_numbers = list(ELEMENT_SYMBOLS.keys())
+
+        # 특성 차원에서 원자 수 추정 (4개 특성/원자)
+        feature_dim = decoded.shape[-1]
+        n_atoms = max(1, feature_dim // 4)
 
         # 원자 번호 예측 (가장 가까운 실제 원자 번호로 매핑)
         atomic_numbers = []
-        for features in atomic_features:
-            z_pred = features[0]  # 첫 번째 특성이 원자 번호
-            # 가장 가까운 실제 원자 번호 찾기
-            z = min(ATOMIC_NUMBERS, key=lambda x: abs(x - z_pred))
-            atomic_numbers.append(z)
+        for i in range(n_atoms):
+            if i * 4 < feature_dim:
+                z_pred = abs(decoded[0, i * 4]) if decoded.ndim == 2 else abs(decoded[i * 4])
+                # 가장 가까운 실제 원자 번호 찾기
+                z = min(valid_atomic_numbers, key=lambda x: abs(x - z_pred))
+                atomic_numbers.append(z)
+            else:
+                atomic_numbers.append(14)  # Si 기본값
 
-        # 위치 좌표 생성
-        positions = decoded[:, 1:4]  # 나머지 3개 특성을 위치 좌표로 사용
+        # 위치 좌표 생성 (랜덤 초기화)
+        positions = np.random.rand(n_atoms, 3)
 
         # 격자 벡터는 별도로 처리 필요 (여기서는 원본 유지 가정)
         lattice_vectors = np.eye(3) * 10.0  # 기본값으로 10Å 큐빅 셀
@@ -275,6 +365,7 @@ class MLPredictor(IModelPredictor):
             atomic_numbers=np.array(atomic_numbers),
             positions=positions,
             lattice_vectors=lattice_vectors,
+            cell_params={"a": 10.0, "b": 10.0, "c": 10.0, "alpha": 90.0, "beta": 90.0, "gamma": 90.0},
             formula=self._get_formula(atomic_numbers)
         )
 

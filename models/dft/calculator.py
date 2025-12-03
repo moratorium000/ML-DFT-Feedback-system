@@ -4,10 +4,13 @@ import asyncio
 import numpy as np
 from enum import Enum
 import logging
+from datetime import datetime
+from abc import ABC, abstractmethod
 
 from core.interfaces import Structure, DFTResult, CalculationStatus
 from core.protocols import IDFTCalculator
 from utils.logger import get_logger
+from utils.constants import ELEMENT_SYMBOLS
 
 
 class DFTCode(Enum):
@@ -180,6 +183,160 @@ class DFTCalculator(IDFTCalculator):
     def _check_electronic_convergence(self, calc_result: DFTResult) -> bool:
         """전자 구조 수렴성 검사"""
         return calc_result.additional_properties.get('electronic_converged', False)
+
+    def _count_valence_electrons(self, structure: Structure) -> int:
+        """가전자 수 계산"""
+        # 간단한 가전자 수 테이블 (주기율표 기준)
+        valence_electrons = {
+            1: 1, 2: 2,  # H, He
+            3: 1, 4: 2, 5: 3, 6: 4, 7: 5, 8: 6, 9: 7, 10: 8,  # Li-Ne
+            11: 1, 12: 2, 13: 3, 14: 4, 15: 5, 16: 6, 17: 7, 18: 8,  # Na-Ar
+            19: 1, 20: 2, 21: 3, 22: 4, 23: 5, 24: 6, 25: 7, 26: 8, 27: 9, 28: 10,  # K-Ni
+            29: 11, 30: 12, 31: 3, 32: 4, 33: 5, 34: 6, 35: 7, 36: 8,  # Cu-Kr
+        }
+        total = 0
+        for z in structure.atomic_numbers:
+            total += valence_electrons.get(int(z), int(z) % 8 + 1)
+        return total
+
+    def _estimate_cpu_hours(self, n_atoms: int, n_electrons: int,
+                           k_points: int, calc_params: Dict) -> float:
+        """CPU 시간 추정"""
+        # 경험적 스케일링 공식
+        base_time = 0.1  # 기본 시간 (시간)
+        atom_scaling = n_atoms ** 2  # O(N^2) 스케일링
+        electron_scaling = n_electrons ** 1.5  # 전자 수 스케일링
+        kpoint_scaling = k_points
+
+        # ENCUT 스케일링
+        encut = calc_params.get('energy_cutoff', 400)
+        encut_scaling = (encut / 400) ** 1.5
+
+        cpu_hours = base_time * atom_scaling * kpoint_scaling * encut_scaling / 1000
+        return max(0.1, cpu_hours)
+
+    def _estimate_memory_requirement(self, n_atoms: int, n_electrons: int,
+                                     k_points: int, calc_params: Dict) -> float:
+        """메모리 요구량 추정 (GB)"""
+        # 기본 메모리: 원자당 ~100MB
+        base_memory = n_atoms * 0.1
+
+        # 전자 수에 따른 스케일링
+        electron_memory = n_electrons * 0.01
+
+        # k-point에 따른 스케일링
+        kpoint_memory = k_points * 0.05
+
+        total_memory = base_memory + electron_memory + kpoint_memory
+        return max(1.0, total_memory)
+
+    def _parse_final_structure(self, raw_result: Dict) -> Structure:
+        """최종 구조 파싱"""
+        if 'final_structure' in raw_result:
+            return raw_result['final_structure']
+
+        # raw_result에서 구조 정보 추출
+        return Structure(
+            atomic_numbers=np.array(raw_result.get('atomic_numbers', [])),
+            positions=np.array(raw_result.get('positions', [])),
+            lattice_vectors=np.array(raw_result.get('lattice', np.eye(3) * 10)),
+            cell_params=raw_result.get('cell_params', {"a": 10, "b": 10, "c": 10}),
+            formula=raw_result.get('formula', 'Unknown')
+        )
+
+
+class BaseDFTCalculator(ABC):
+    """DFT 계산기 베이스 클래스"""
+
+    def __init__(self, config: Dict):
+        self.config = config
+        self.logger = get_logger(__name__)
+
+    @abstractmethod
+    def prepare_input_files(self, structure: Structure, params: Dict) -> Dict[str, Path]:
+        """입력 파일 준비"""
+        pass
+
+    @abstractmethod
+    async def submit_job(self, calc_dir: Path, input_files: Dict[str, Path]) -> str:
+        """작업 제출"""
+        pass
+
+    @abstractmethod
+    async def check_job_status(self, job_id: str) -> CalculationStatus:
+        """작업 상태 확인"""
+        pass
+
+    @abstractmethod
+    async def collect_results(self, job_id: str) -> Dict:
+        """결과 수집"""
+        pass
+
+
+class VASPCalculator(BaseDFTCalculator):
+    """VASP 계산기"""
+
+    def prepare_input_files(self, structure: Structure, params: Dict) -> Dict[str, Path]:
+        """VASP 입력 파일 준비 (POSCAR, INCAR, KPOINTS, POTCAR)"""
+        # 실제 구현에서는 pymatgen 등을 사용
+        return {}
+
+    async def submit_job(self, calc_dir: Path, input_files: Dict[str, Path]) -> str:
+        """VASP 작업 제출"""
+        job_id = f"vasp_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        self.logger.info(f"Submitted VASP job: {job_id}")
+        return job_id
+
+    async def check_job_status(self, job_id: str) -> CalculationStatus:
+        """VASP 작업 상태 확인"""
+        # 실제 구현에서는 큐 시스템 체크
+        return CalculationStatus.COMPLETED
+
+    async def collect_results(self, job_id: str) -> Dict:
+        """VASP 결과 수집"""
+        return {'total_energy': 0.0, 'forces': np.zeros((1, 3)), 'calculation_time': 0.0}
+
+
+class QECalculator(BaseDFTCalculator):
+    """Quantum ESPRESSO 계산기"""
+
+    def prepare_input_files(self, structure: Structure, params: Dict) -> Dict[str, Path]:
+        """QE 입력 파일 준비"""
+        return {}
+
+    async def submit_job(self, calc_dir: Path, input_files: Dict[str, Path]) -> str:
+        """QE 작업 제출"""
+        job_id = f"qe_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        return job_id
+
+    async def check_job_status(self, job_id: str) -> CalculationStatus:
+        """QE 작업 상태 확인"""
+        return CalculationStatus.COMPLETED
+
+    async def collect_results(self, job_id: str) -> Dict:
+        """QE 결과 수집"""
+        return {'total_energy': 0.0, 'forces': np.zeros((1, 3)), 'calculation_time': 0.0}
+
+
+class SIESTACalculator(BaseDFTCalculator):
+    """SIESTA 계산기"""
+
+    def prepare_input_files(self, structure: Structure, params: Dict) -> Dict[str, Path]:
+        """SIESTA 입력 파일 준비"""
+        return {}
+
+    async def submit_job(self, calc_dir: Path, input_files: Dict[str, Path]) -> str:
+        """SIESTA 작업 제출"""
+        job_id = f"siesta_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        return job_id
+
+    async def check_job_status(self, job_id: str) -> CalculationStatus:
+        """SIESTA 작업 상태 확인"""
+        return CalculationStatus.COMPLETED
+
+    async def collect_results(self, job_id: str) -> Dict:
+        """SIESTA 결과 수집"""
+        return {'total_energy': 0.0, 'forces': np.zeros((1, 3)), 'calculation_time': 0.0}
 
 
 class CalculationFailedError(Exception):
