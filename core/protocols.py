@@ -1,4 +1,4 @@
-from typing import Protocol, List, Dict, Optional
+from typing import Any, Protocol, List, Dict, Optional
 from .interfaces import (
     Structure,
     MutationResult,
@@ -24,7 +24,7 @@ class IStructureValidator(Protocol):
         """안정성 분석"""
         ...
 
-    async def verify_symmetry(self, structure: Structure) -> Dict[str, any]:
+    async def verify_symmetry(self, structure: Structure) -> Dict[str, Any]:
         """대칭성 검증"""
         ...
 
@@ -34,7 +34,7 @@ class IMutationGenerator(Protocol):
 
     async def generate(self,
                        structure: Structure,
-                       mutation_params: Dict[str, any]) -> List[MutationResult]:
+                       mutation_params: Dict[str, Any]) -> List[MutationResult]:
         """Mutation 생성"""
         ...
 
@@ -85,7 +85,7 @@ class IPathOptimizer(Protocol):
 
     async def optimize_path(self,
                             path: List[PathStep],
-                            constraints: Dict[str, any]) -> List[PathStep]:
+                            constraints: Dict[str, Any]) -> List[PathStep]:
         """경로 최적화"""
         ...
 
@@ -106,7 +106,7 @@ class IDFTCalculator(Protocol):
 
     async def calculate(self,
                         structure: Structure,
-                        calc_params: Dict[str, any]) -> DFTResult:
+                        calc_params: Dict[str, Any]) -> DFTResult:
         """DFT 계산 수행"""
         ...
 
@@ -117,7 +117,7 @@ class IDFTCalculator(Protocol):
 
     async def estimate_cost(self,
                             structure: Structure,
-                            calc_params: Dict[str, any]) -> Dict[str, float]:
+                            calc_params: Dict[str, Any]) -> Dict[str, float]:
         """계산 비용 추정"""
         ...
 
@@ -150,16 +150,16 @@ class IFeedbackAnalyzer(Protocol):
 
     async def analyze_feedback(self,
                                prediction: PredictionResult,
-                               actual: DFTResult) -> Dict[str, any]:
+                               actual: DFTResult) -> Dict[str, Any]:
         """피드백 분석"""
         ...
 
     async def suggest_improvements(self,
-                                   analysis: Dict[str, any]) -> Dict[str, any]:
+                                   analysis: Dict[str, Any]) -> Dict[str, Any]:
         """개선사항 제안"""
         ...
 
     async def update_strategy(self,
-                              feedback: Dict[str, any]) -> Dict[str, any]:
+                              feedback: Dict[str, Any]) -> Dict[str, Any]:
         """전략 업데이트"""
         ...

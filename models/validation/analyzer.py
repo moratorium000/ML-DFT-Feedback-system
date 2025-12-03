@@ -1,4 +1,4 @@
-from typing import Dict, List, Optional, Union, Tuple
+from typing import Any, Dict, List, Optional, Union, Tuple
 import numpy as np
 from dataclasses import dataclass
 from scipy import stats
@@ -12,10 +12,10 @@ from utils.logger import get_logger
 @dataclass
 class AnalysisResult:
     """분석 결과"""
-    structural_analysis: Dict[str, any]  # 구조 분석
-    electronic_analysis: Dict[str, any]  # 전자 구조 분석
-    energetic_analysis: Dict[str, any]  # 에너지 분석
-    statistical_analysis: Dict[str, any]  # 통계 분석
+    structural_analysis: Dict[str, Any]  # 구조 분석
+    electronic_analysis: Dict[str, Any]  # 전자 구조 분석
+    energetic_analysis: Dict[str, Any]  # 에너지 분석
+    statistical_analysis: Dict[str, Any]  # 통계 분석
     recommendations: List[str]  # 개선 추천사항
 
 
@@ -63,7 +63,7 @@ class StructureAnalyzer:
         )
 
     async def _analyze_structural_properties(self,
-                                             structure: Structure) -> Dict[str, any]:
+                                             structure: Structure) -> Dict[str, Any]:
         """구조적 특성 분석"""
         # 격자 분석
         lattice_analysis = self._analyze_lattice(structure)
@@ -87,7 +87,7 @@ class StructureAnalyzer:
 
     async def _analyze_electronic_properties(self,
                                              structure: Structure,
-                                             dft_result: Optional[DFTResult]) -> Dict[str, any]:
+                                             dft_result: Optional[DFTResult]) -> Dict[str, Any]:
         """전자 구조 분석"""
         if dft_result is None:
             return {'available': False}
@@ -102,7 +102,7 @@ class StructureAnalyzer:
 
     async def _analyze_energetic_properties(self,
                                             structure: Structure,
-                                            dft_result: Optional[DFTResult]) -> Dict[str, any]:
+                                            dft_result: Optional[DFTResult]) -> Dict[str, Any]:
         """에너지 특성 분석"""
         if dft_result is None:
             return {'available': False}
@@ -115,7 +115,7 @@ class StructureAnalyzer:
             'energy_decomposition': self._analyze_energy_decomposition(dft_result)
         }
 
-    def _analyze_lattice(self, structure: Structure) -> Dict[str, any]:
+    def _analyze_lattice(self, structure: Structure) -> Dict[str, Any]:
         """격자 분석"""
         lattice = structure.lattice_vectors
 
@@ -138,7 +138,7 @@ class StructureAnalyzer:
             'strain': strain_tensor
         }
 
-    def _analyze_atomic_arrangement(self, structure: Structure) -> Dict[str, any]:
+    def _analyze_atomic_arrangement(self, structure: Structure) -> Dict[str, Any]:
         """원자 배열 분석"""
         # 원자 분포 분석
         distribution = self._analyze_atomic_distribution(structure)
@@ -159,7 +159,7 @@ class StructureAnalyzer:
             'clusters': clusters
         }
 
-    def _analyze_bonding_network(self, structure: Structure) -> Dict[str, any]:
+    def _analyze_bonding_network(self, structure: Structure) -> Dict[str, Any]:
         """결합 네트워크 분석"""
         # 결합 그래프 생성
         graph = self._create_bonding_graph(structure)
@@ -186,7 +186,7 @@ class StructureAnalyzer:
                                         structure: Structure,
                                         structural: Dict,
                                         electronic: Dict,
-                                        energetic: Dict) -> Dict[str, any]:
+                                        energetic: Dict) -> Dict[str, Any]:
         """통계적 특성 분석"""
         # 구조 특성의 통계 분석
         structural_stats = self._calculate_structural_statistics(structural)

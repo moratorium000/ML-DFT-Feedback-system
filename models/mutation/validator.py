@@ -1,4 +1,4 @@
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 from dataclasses import dataclass
 
@@ -95,7 +95,7 @@ class StructureValidator(IStructureValidator):
             'packing_score': self._analyze_packing(structure)
         }
 
-    async def verify_symmetry(self, structure: Structure) -> Dict[str, any]:
+    async def verify_symmetry(self, structure: Structure) -> Dict[str, Any]:
         """대칭성 검증"""
         # 공간군 분석
         spacegroup = self._determine_spacegroup(structure)

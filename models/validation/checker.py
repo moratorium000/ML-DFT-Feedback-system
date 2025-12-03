@@ -1,4 +1,4 @@
-from typing import Dict, List, Optional, Union, Tuple
+from typing import Any, Dict, List, Optional, Union, Tuple
 import numpy as np
 from dataclasses import dataclass
 from enum import Enum
@@ -20,7 +20,7 @@ class CheckResult:
     """검사 결과"""
     passed: bool
     score: float
-    details: Dict[str, any]
+    details: Dict[str, Any]
     messages: List[str]
 
 
