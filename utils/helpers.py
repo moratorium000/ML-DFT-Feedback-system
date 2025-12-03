@@ -6,7 +6,7 @@ import yaml
 from datetime import *
 import hashlib
 import uuid
-from utils.constants import *
+from .constants import *
 from core.interfaces import Structure
 
 

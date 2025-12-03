@@ -25,7 +25,7 @@ class FormatConverter:
     @staticmethod
     def from_dict(data: Dict) -> 'Structure':
         """딕셔너리에서 구조 생성"""
-        from ...interfaces import Structure
+        from core.interfaces import Structure
 
         return Structure(
             atomic_numbers=np.array(data['atomic_numbers']),

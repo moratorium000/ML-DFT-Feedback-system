@@ -3,23 +3,23 @@ from pathlib import Path
 import asyncio
 import logging
 
-from manager import (
+from .manager import (
     PrototypeManager,
     DFTManager,
     MLManager,
     PathManager
 )
-from interfaces import (
+from .interfaces import (
     Structure,
     MutationResult,
     DFTResult,
     PathStep,
     OptimizationResult
 )
-from data.cache import CacheManager
-from data.database import DatabaseManager
-from utils.logger import setup_logger
-from config.settings import SystemConfig
+from data.cache.manager import CacheManager
+from data.database.queries import DatabaseQueries as DatabaseManager
+from utils.logger import get_logger as setup_logger
+from config.settings import SystemSettings as SystemConfig
 
 
 class MLDFTSystem:

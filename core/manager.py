@@ -4,7 +4,7 @@ import asyncio
 import logging
 from datetime import datetime
 
-from interfaces import (
+from .interfaces import (
     Structure,
     MutationResult,
     DFTResult,
@@ -13,7 +13,7 @@ from interfaces import (
     PredictionResult
 )
 
-from protocols import (
+from .protocols import (
     IStructureValidator,
     IMutationGenerator,
     IModelPredictor

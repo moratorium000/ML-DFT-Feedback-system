@@ -1,8 +1,9 @@
-from typing import Dict, List, Optional, Union, Any
+from typing import Dict, List, Optional, Union, Any, BinaryIO
 from pathlib import Path
 from enum import Enum
 import asyncio
 import aiohttp
+import aiofiles
 import json
 import logging
 from dataclasses import dataclass

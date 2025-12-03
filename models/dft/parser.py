@@ -6,7 +6,7 @@ import json
 import re
 
 from core.interfaces import Structure, DFTResult
-from core.utils.logger import get_logger
+from utils.logger import get_logger
 
 
 class DFTOutputParser:
@@ -191,9 +191,71 @@ class QEParser:
         return results
 
     def _parse_xml(self, xml_path: Path) -> Dict:
-        """QE XML 파일 파싱"""
-        # XML 파싱 구현
-        pass
+        """QE XML 파일 파싱 (data-file-schema.xml)"""
+        results = {
+            'band_structure': {},
+            'dos': {},
+            'atomic_positions': [],
+            'cell': []
+        }
+
+        try:
+            tree = ET.parse(xml_path)
+            root = tree.getroot()
+
+            # 네임스페이스 처리
+            ns = {'qes': 'http://www.quantum-espresso.org/ns/qes/qes-1.0'}
+
+            # 총 에너지 추출
+            total_energy = root.find('.//qes:total_energy/qes:etot', ns)
+            if total_energy is not None:
+                results['total_energy'] = float(total_energy.text)
+
+            # 페르미 에너지 추출
+            fermi = root.find('.//qes:fermi_energy', ns)
+            if fermi is not None:
+                results['fermi_energy'] = float(fermi.text)
+
+            # 밴드갭 추출
+            band_gap = root.find('.//qes:band_gap', ns)
+            if band_gap is not None:
+                results['band_gap'] = float(band_gap.text)
+
+            # 원자 위치 추출
+            atomic_positions = root.find('.//qes:atomic_positions', ns)
+            if atomic_positions is not None:
+                for atom in atomic_positions.findall('qes:atom', ns):
+                    name = atom.get('name')
+                    pos = [float(x) for x in atom.text.split()]
+                    results['atomic_positions'].append({
+                        'species': name,
+                        'position': pos
+                    })
+
+            # 격자 벡터 추출
+            cell = root.find('.//qes:cell', ns)
+            if cell is not None:
+                for vec in ['a1', 'a2', 'a3']:
+                    vec_elem = cell.find(f'qes:{vec}', ns)
+                    if vec_elem is not None:
+                        results['cell'].append(
+                            [float(x) for x in vec_elem.text.split()]
+                        )
+
+            # k-points 및 고유값 추출
+            ks_energies = root.find('.//qes:ks_energies', ns)
+            if ks_energies is not None:
+                results['band_structure']['eigenvalues'] = []
+                for ks in ks_energies.findall('qes:ks_state', ns):
+                    eig = ks.find('qes:eigenvalues', ns)
+                    if eig is not None:
+                        eigenvalues = [float(x) for x in eig.text.split()]
+                        results['band_structure']['eigenvalues'].append(eigenvalues)
+
+        except ET.ParseError as e:
+            raise OutputParserError(f"XML parsing failed: {e}")
+
+        return results
 
 
 class SIESTAParser:
@@ -211,8 +273,88 @@ class SIESTAParser:
 
     def _parse_output(self, output_path: Path) -> Dict:
         """SIESTA 출력 파일 파싱"""
-        # SIESTA 출력 파싱 구현
-        pass
+        results = {
+            'energies': [],
+            'forces': [],
+            'stress': [],
+            'band_gap': None,
+            'fermi_energy': None,
+            'convergence': False,
+            'scf_iterations': []
+        }
+
+        try:
+            with open(output_path, 'r') as f:
+                content = f.read()
+                lines = content.split('\n')
+
+            # 총 에너지 추출 (Ry → eV 변환: 1 Ry = 13.6057 eV)
+            energy_pattern = r"siesta:\s+Total\s+=\s+([\d\.-]+)"
+            energies = re.findall(energy_pattern, content)
+            results['energies'] = [float(e) for e in energies]
+
+            # 페르미 에너지 추출
+            fermi_pattern = r"siesta:\s+Fermi\s+=\s+([\d\.-]+)"
+            fermi_match = re.search(fermi_pattern, content)
+            if fermi_match:
+                results['fermi_energy'] = float(fermi_match.group(1))
+
+            # 힘 추출
+            force_section = False
+            current_forces = []
+            for line in lines:
+                if 'siesta: Atomic forces' in line:
+                    force_section = True
+                    current_forces = []
+                    continue
+                if force_section:
+                    if line.strip() == '' or 'siesta:' in line:
+                        if current_forces:
+                            results['forces'].append(np.array(current_forces))
+                        force_section = False
+                        continue
+                    parts = line.split()
+                    if len(parts) >= 4:
+                        try:
+                            force = [float(parts[1]), float(parts[2]), float(parts[3])]
+                            current_forces.append(force)
+                        except (ValueError, IndexError):
+                            continue
+
+            # 응력 텐서 추출
+            stress_pattern = r"siesta: Stress tensor \(static\).*?\n(.*?)\n(.*?)\n(.*?)\n"
+            stress_match = re.search(stress_pattern, content, re.DOTALL)
+            if stress_match:
+                stress_tensor = []
+                for i in range(1, 4):
+                    row = [float(x) for x in stress_match.group(i).split()[1:4]]
+                    stress_tensor.append(row)
+                results['stress'] = np.array(stress_tensor)
+
+            # 밴드갭 추출
+            gap_pattern = r"siesta:\s+Band\s+gap\s+=\s+([\d\.]+)\s+eV"
+            gap_match = re.search(gap_pattern, content)
+            if gap_match:
+                results['band_gap'] = float(gap_match.group(1))
+
+            # SCF 수렴 확인
+            if 'SCF cycle converged' in content:
+                results['convergence'] = True
+
+            # SCF 반복 횟수 추출
+            scf_pattern = r"scf:\s+(\d+)\s+([\d\.E\+-]+)"
+            scf_iterations = re.findall(scf_pattern, content)
+            results['scf_iterations'] = [
+                {'iteration': int(s[0]), 'energy': float(s[1])}
+                for s in scf_iterations
+            ]
+
+        except FileNotFoundError:
+            raise OutputParserError(f"SIESTA output file not found: {output_path}")
+        except Exception as e:
+            raise OutputParserError(f"SIESTA parsing failed: {e}")
+
+        return results
 
 
 class OutputParserError(Exception):

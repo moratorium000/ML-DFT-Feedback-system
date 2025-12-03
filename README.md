@@ -200,3 +200,25 @@ storage:
   base_dir: "./data"
   compression: true
 ```
+
+## Testing
+
+```bash
+# Run all tests
+pytest
+
+# Run with coverage
+pytest --cov=. --cov-report=html
+
+# Run specific test module
+pytest tests/core/test_interfaces.py
+
+# Run only fast tests (exclude slow markers)
+pytest -m "not slow"
+```
+
+## Documentation
+
+- **API Documentation**: See `docs/API.md` for detailed API reference
+- **Architecture**: System components and data flow described above
+- **Configuration**: Example configurations in `config/` directory

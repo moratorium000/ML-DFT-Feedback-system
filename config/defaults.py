@@ -1,4 +1,4 @@
-from typing import Dict, Final
+from typing import Any, Dict, Final
 from pathlib import Path
 
 # 시스템 기본 경로
@@ -12,7 +12,7 @@ DEFAULT_PATHS: Final[Dict[str, Path]] = {
 }
 
 # DFT 기본 설정
-DEFAULT_DFT_SETTINGS: Final[Dict[str, any]] = {
+DEFAULT_DFT_SETTINGS: Final[Dict[str, Any]] = {
     'code': 'vasp',
     'parameters': {
         'xc_functional': 'PBE',
@@ -37,7 +37,7 @@ DEFAULT_DFT_SETTINGS: Final[Dict[str, any]] = {
 }
 
 # ML 기본 설정
-DEFAULT_ML_SETTINGS: Final[Dict[str, any]] = {
+DEFAULT_ML_SETTINGS: Final[Dict[str, Any]] = {
     'model': {
         'architecture': 'graph',
         'hidden_layers': [256, 128, 64],
@@ -69,7 +69,7 @@ DEFAULT_ML_SETTINGS: Final[Dict[str, any]] = {
 }
 
 # 데이터베이스 기본 설정
-DEFAULT_DB_SETTINGS: Final[Dict[str, any]] = {
+DEFAULT_DB_SETTINGS: Final[Dict[str, Any]] = {
     'url': 'sqlite:///mldft.db',
     'pool_size': 5,
     'max_overflow': 10,
@@ -79,7 +79,7 @@ DEFAULT_DB_SETTINGS: Final[Dict[str, any]] = {
 }
 
 # 저장소 기본 설정
-DEFAULT_STORAGE_SETTINGS: Final[Dict[str, any]] = {
+DEFAULT_STORAGE_SETTINGS: Final[Dict[str, Any]] = {
     'backend': 'local',
     'compression': True,
     'chunk_size': 8192,
@@ -94,7 +94,7 @@ DEFAULT_STORAGE_SETTINGS: Final[Dict[str, any]] = {
 }
 
 # 캐시 기본 설정
-DEFAULT_CACHE_SETTINGS: Final[Dict[str, any]] = {
+DEFAULT_CACHE_SETTINGS: Final[Dict[str, Any]] = {
     'backend': 'memory',
     'max_size': 1000,
     'ttl': 3600,
@@ -114,7 +114,7 @@ DEFAULT_CACHE_SETTINGS: Final[Dict[str, any]] = {
 }
 
 # 로깅 기본 설정
-DEFAULT_LOG_SETTINGS: Final[Dict[str, any]] = {
+DEFAULT_LOG_SETTINGS: Final[Dict[str, Any]] = {
     'level': 'INFO',
     'format': '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     'date_format': '%Y-%m-%d %H:%M:%S',
@@ -131,7 +131,7 @@ DEFAULT_LOG_SETTINGS: Final[Dict[str, any]] = {
 }
 
 # 프로토타입 기본 설정
-DEFAULT_PROTOTYPE_SETTINGS: Final[Dict[str, any]] = {
+DEFAULT_PROTOTYPE_SETTINGS: Final[Dict[str, Any]] = {
     'validation': {
         'min_atomic_distance': 0.7,  # Å
         'max_atomic_distance': 3.0,  # Å
@@ -147,7 +147,7 @@ DEFAULT_PROTOTYPE_SETTINGS: Final[Dict[str, any]] = {
 }
 
 # Mutation 기본 설정
-DEFAULT_MUTATION_SETTINGS: Final[Dict[str, any]] = {
+DEFAULT_MUTATION_SETTINGS: Final[Dict[str, Any]] = {
     'operators': {
         'displacement': {
             'probability': 0.3,
@@ -176,7 +176,7 @@ DEFAULT_MUTATION_SETTINGS: Final[Dict[str, any]] = {
 }
 
 # 성능 기본 설정
-DEFAULT_PERFORMANCE_SETTINGS: Final[Dict[str, any]] = {
+DEFAULT_PERFORMANCE_SETTINGS: Final[Dict[str, Any]] = {
     'max_workers': 4,
     'chunk_size': 1000,
     'timeout': 30,

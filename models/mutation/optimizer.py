@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 from scipy.optimize import minimize
 
-from interfaces import Structure, MutationResult, PathStep
+from core.interfaces import Structure, MutationResult, PathStep
 from utils.logger import get_logger
 
 

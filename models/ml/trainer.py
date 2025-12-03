@@ -7,7 +7,7 @@ from pathlib import Path
 import logging
 from datetime import datetime
 
-from predictor import PropertyPredictor, PathPredictor
+from .predictor import PropertyPredictor, PathPredictor
 from core.interfaces import Structure, DFTResult, MLModelState
 from utils.logger import get_logger
 

@@ -1,8 +1,8 @@
 from typing import Dict, Optional, Any, Union
 from pathlib import Path
 import logging
-from memory import MemoryCache
-from disk import DiskCache, DiskCacheConfig
+from .memory import MemoryCache
+from .disk import DiskCache, DiskCacheConfig
 
 
 class CacheManager:

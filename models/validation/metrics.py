@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from scipy.stats import wasserstein_distance
 from sklearn.metrics import mean_squared_error, r2_score
 
-from ...interfaces import Structure, DFTResult, ValidationResult
+from core.interfaces import Structure, DFTResult, ValidationResult
 
 
 @dataclass

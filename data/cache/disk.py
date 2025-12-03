@@ -10,6 +10,7 @@ import logging
 import zlib
 import os
 import asyncio
+import aiofiles
 from dataclasses import dataclass
 
 

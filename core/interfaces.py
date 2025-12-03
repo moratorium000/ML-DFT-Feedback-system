@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Union, Tuple
+from typing import Any, Dict, List, Optional, Union, Tuple
 from datetime import datetime
 import numpy as np
 from enum import Enum
@@ -31,7 +31,7 @@ class MutationResult:
     original_structure: Structure   # 원본 구조
     mutated_structure: Structure   # 변형된 구조
     mutation_type: str            # mutation 유형
-    changes: Dict[str, any]       # 적용된 변경 사항
+    changes: Dict[str, Any]       # 적용된 변경 사항
     success: bool                # mutation 성공 여부
     stability_score: float       # 안정성 점수
     validity_score: float        # 물리적 타당성 점수
@@ -58,7 +58,7 @@ class DFTResult:
     error_messages: List[str]     # 오류 메시지
     magnetic_moment: Optional[float] = None  # 자기모멘트
     charge_density: Optional[np.ndarray] = None  # 전하 밀도
-    additional_properties: Dict[str, any] = field(default_factory=dict)
+    additional_properties: Dict[str, Any] = field(default_factory=dict)
 
 @dataclass
 class PathStep:
@@ -82,7 +82,7 @@ class ValidationResult:
     """검증 결과"""
     is_valid: bool               # 유효성 여부
     stability_score: float       # 안정성 점수
-    validation_details: Dict[str, any]  # 검증 세부사항
+    validation_details: Dict[str, Any]  # 검증 세부사항
     error_messages: List[str]    # 오류 메시지
 
 @dataclass
@@ -91,7 +91,7 @@ class PredictionResult:
     predicted_values: Dict[str, float]  # 예측값
     uncertainty: Dict[str, float]      # 불확실성
     confidence_score: float           # 신뢰도 점수
-    prediction_details: Dict[str, any] # 예측 세부사항
+    prediction_details: Dict[str, Any] # 예측 세부사항
 
 @dataclass
 class OptimizationResult:
@@ -112,7 +112,7 @@ class MLModelState:
     training_iterations: int     # 학습 반복 횟수
     performance_metrics: Dict[str, float]  # 성능 지표
     last_update: datetime       # 마지막 업데이트 시간
-    model_parameters: Dict[str, any]  # 모델 파라미터
+    model_parameters: Dict[str, Any]  # 모델 파라미터
     training_history: List[Dict] = field(default_factory=list)  # 학습 히스토리
 
 @dataclass
